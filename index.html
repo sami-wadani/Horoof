@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>حروف الأندلس - مسابقة تفاعلية</title>
+    
+    <!-- المكتبات الخارجية -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        /* استيراد خط كايرو الأساسي للنصوص */
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
+
+        /* تعريف خط "زعتر" المخصص للعنوان */
+        @font-face {
+            font-family: 'Zaatar';
+            src: url('zaatar.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        body { 
+            font-family: 'Cairo', sans-serif; 
+            background-color: #090d16; 
+            color: #f8fafc; 
+            overflow-x: hidden; 
+        }
+
+        /* التصميم ثلاثي الأبعاد للعنوان بخط (Zaatar) بالقياسات المعتمدة */
+        .title-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px 0;
+        }
+
+        .andalusia-3d-title {
+            font-family: 'Zaatar', 'Cairo', sans-serif;
+            display: flex;
+            flex-direction: column;
+            transform: rotate(-8deg); 
+            position: relative;
+            user-select: none;
+        }
+
+        /* كلمة "حروف" (أبيض - يمين - أعلى) */
+        .word-top {
+            color: #ffffff;
+            font-size: 5.5rem;
+            line-height: 1.2;
+            text-align: right;
+            margin-left: 80px; 
+            margin-bottom: 15px; 
+            z-index: 2;
+            text-shadow: 
+                -1px 1px 0px #cbd5e1,
+                -2px 2px 0px #cbd5e1,
+                -3px 3px 0px #94a3b8,
+                -4px 4px 0px #94a3b8,
+                -5px 5px 15px rgba(0,0,0,0.5);
+        }
+
+        /* كلمة "الأندلس" (أصفر - يسار - أسفل) */
+        .word-bottom {
+            color: #fbbc04; 
+            font-size: 6.5rem;
+            line-height: 1.2;
+            text-align: left;
+            margin-right: 200px; 
+            margin-top: -40px; 
+            z-index: 1;
+            text-shadow: 
+                -1px 1px 0px #d97706,
+                -2px 2px 0px #d97706,
+                -3px 3px 0px #b45309,
+                -4px 4px 0px #b45309,
+                -5px 5px 15px rgba(0,0,0,0.6);
+        }
+
+        /* تنسيقات شبكة خلايا العسل (20 خلية: 4 صفوف × 5 أعمدة) */
+        .honeycomb-container { display: flex; flex-direction: column; align-items: center; margin: 10px auto; padding: 10px 0; }
+        .hex-row { display: flex; margin-top: -32px; }
+        .hex-row:first-child { margin-top: 0; }
+        .hex-row.offset { transform: translateX(55px); }
+
+        .hex { 
+            width: 110px; height: 126px; background-color: #090d16; 
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); 
+            display: flex; align-items: center; justify-content: center; 
+            cursor: pointer; position: relative; transition: transform 0.2s ease; 
+        }
+
+        .hex-inner { 
+            width: 104px; height: 120px; background-color: #1e293b; 
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); 
+            display: flex; align-items: center; justify-content: center; 
+            font-size: 40px; font-weight: 900; color: #cbd5e1; transition: background-color 0.3s ease; 
+        }
+
+        body:not(.projector-mode) .hex:hover .hex-inner { background-color: #334155; transform: scale(1.05); }
+        body.projector-mode .hex { cursor: default; pointer-events: none; }
+
+        /* تأثير الوميض */
+        .hex.flashing { z-index: 20; }
+        .hex.flashing .hex-inner { 
+            animation: flash 0.5s infinite alternate; 
+            transform: scale(1.1); box-shadow: 0 0 25px #f59e0b; border: 2px solid #fbbf24; 
+        }
+        .hex.owned .hex-inner { color: white; text-shadow: 2px 2px 4px rgba(0,0,0,0.6); }
+
+        @keyframes flash { 
+            from { background-color: #fbbf24; color: #000; } 
+            to { background-color: #f59e0b; color: #000; } 
+        }
+
+        /* النوافذ المنبثقة */
+        .modal { 
+            display: none; position: fixed; inset: 0; background: rgba(2, 6, 23, 0.95); 
+            justify-content: center; align-items: center; z-index: 50; padding: 15px; 
+        }
+        .modal.active { display: flex !important; }
+
+        .timer-bar { height: 6px; background: #ef4444; transition: width 1s linear; border-radius: 3px; }
+
+        /* إخفاء أدوات التحكم في شاشة عرض الجمهور */
+        body.projector-mode .hide-on-projector { display: none !important; }
+
+        /* شبكة الحروف في لوحة المشرف */
+        .letters-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; max-width: 350px; margin: 0 auto; }
+        .l-input { width: 100%; aspect-ratio: 1; text-align: center; font-size: 20px; font-weight: bold; background: #1e293b; border: 2px solid #334155; border-radius: 6px; color: white; outline: none; transition: border-color 0.2s; }
+        .l-input:focus { border-color: #f59e0b; }
+
+        /* تجاوب الشاشات الصغيرة (الجوال) */
+        @media (max-width: 768px) {
+            .hex { width: 65px; height: 75px; }
+            .hex-inner { width: 61px; height: 71px; font-size: 22px; }
+            .hex-row { margin-top: -18px; }
+            .hex-row.offset { transform: translateX(32px); }
+            
+            .word-top { font-size: 3.5rem; margin-left: 50px; margin-right: 0; margin-bottom: 10px; line-height: 1.2; }
+            .word-bottom { font-size: 4.5rem; margin-right: 120px; margin-left: 0; margin-top: -25px; line-height: 1.2; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+    <!-- 1. شاشة اختيار الدور والغرفة -->
+    <div id="role-selector-modal" style="display: flex;" class="modal active flex-col gap-6">
+        <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl max-w-lg w-full text-center shadow-2xl">
+            <div class="title-container mb-6 scale-90">
+                <div class="andalusia-3d-title">
+                    <span class="word-top">حروف</span>
+                    <span class="word-bottom">الأندلس</span>
+                </div>
+            </div>
+            
+            <p class="text-gray-400 text-sm mb-6">اختر وضع الجهاز وأدخل رمز الغرفة للتزامن</p>
+            
+            <div class="mb-5 text-right">
+                <label class="block text-xs text-gray-400 mb-1 font-bold">رمز الغرفة</label>
+                <input type="text" id="room-code-input" value="andalus-room-1" class="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-lg text-center font-bold tracking-widest text-amber-300 text-sm outline-none focus:border-amber-500">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 mt-4">
+                <button type="button" id="btn-role-admin" onclick="initApp('admin')" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold p-3 rounded-xl transition flex flex-col items-center gap-1 text-xs shadow-lg cursor-pointer">
+                    <span class="text-2xl">📱</span> لوحة التحكم (المشرف)
+                </button>
+                <button type="button" id="btn-role-screen" onclick="initApp('screen')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold p-3 rounded-xl transition flex flex-col items-center gap-1 text-xs shadow-lg cursor-pointer">
+                    <span class="text-2xl">🖥️</span> شاشة العرض (الجمهور)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. شاشة انتظار الجمهور -->
+    <div id="waiting-screen" style="display: none;" class="hidden flex-1 flex-col justify-center items-center h-screen text-center px-4">
+        <div class="title-container mb-12">
+            <div class="andalusia-3d-title">
+                <span class="word-top">حروف</span>
+                <span class="word-bottom">الأندلس</span>
+            </div>
+        </div>
+        <h2 class="text-2xl md:text-3xl font-bold text-slate-400 animate-pulse mb-4">بانتظار تجهيز المسابقة...</h2>
+        <p class="text-slate-500 text-lg">رمز الغرفة: <span id="display-room-code" class="text-amber-500 font-bold tracking-widest"></span></p>
+    </div>
+
+    <!-- 3. شاشة إعداد الفرق (للمشرف: 2 إلى 4 فرق) -->
+    <div id="setup-screen" style="display: none;" class="p-6 max-w-xl mx-auto my-auto hide-on-projector hidden w-full">
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+            <div class="title-container mb-6 scale-75">
+                <div class="andalusia-3d-title">
+                    <span class="word-top">حروف</span>
+                    <span class="word-bottom">الأندلس</span>
+                </div>
+            </div>
+            <div class="space-y-3 text-sm">
+                <div>
+                    <label class="block mb-1 text-gray-300 font-bold">عدد الفرق المشاركة (2 إلى 4)</label>
+                    <select id="team-count" class="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white outline-none" onchange="renderTeamInputs()">
+                        <option value="2">فريقان (2)</option>
+                        <option value="3">3 فرق</option>
+                        <option value="4">4 فرق</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block mb-1 text-gray-300 font-bold">زمن السؤال الافتراضي (ثانية)</label>
+                    <input type="number" id="default-time" value="30" class="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white outline-none">
+                </div>
+                <div id="teams-input" class="grid grid-cols-2 gap-3 pt-2"></div>
+                <button type="button" onclick="startNewMatch()" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold p-3 rounded-xl transition mt-4 text-base shadow-lg cursor-pointer">
+                    حفظ وبدء المسابقة
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. واجهة اللعبة الرئيسية -->
+    <div id="game-screen" style="display: none;" class="hidden p-4 flex-1 flex flex-col">
+        <div class="flex justify-between items-center border-b border-slate-800 pb-3 mb-2 flex-wrap gap-2">
+            <!-- شريط المراحل -->
+            <div class="flex items-center gap-2">
+                <div id="stages-bar" class="flex gap-2 flex-wrap"></div>
+            </div>
+
+            <!-- أزرار إعلان الفوز اليدوي للمشرف -->
+            <div class="flex items-center gap-1.5 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800 hide-on-projector">
+                <span class="text-xs text-slate-400 font-bold ml-1">إعلان فوز المرحلة:</span>
+                <div id="manual-win-buttons" class="flex items-center gap-1.5 flex-wrap"></div>
+            </div>
+
+            <!-- أزرار الإدارة العلوية -->
+            <div class="flex gap-1.5 hide-on-projector flex-wrap">
+                <button type="button" onclick="openProjectorWindow()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition cursor-pointer">🖥️ شاشة العرض</button>
+                <button type="button" onclick="openAdmin()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition cursor-pointer">⚙️ بنك الأسئلة والمراحل</button>
+                <button type="button" onclick="openSetupScreen()" class="bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg text-xs font-bold border border-slate-700 transition cursor-pointer">👥 الفرق</button>
+                <button type="button" onclick="resetMatchScores()" class="bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg text-xs font-bold border border-slate-700 transition cursor-pointer">🔄 تصفير</button>
+                <button type="button" onclick="triggerEndGame()" class="bg-red-900/60 hover:bg-red-800 text-red-200 px-3 py-2 rounded-lg text-xs font-bold border border-red-800 transition cursor-pointer">🏁 إنهاء</button>
+            </div>
+        </div>
+        
+        <!-- لوحة النقاط المدمجة (سطر واحد لكل فريق) -->
+        <div id="scoreboard" class="flex justify-center gap-3 mb-2 flex-wrap mt-1"></div>
+        
+        <!-- العنوان الرئيسي في المنتصف -->
+        <div class="title-container mb-4 mt-2">
+            <div class="andalusia-3d-title">
+                <span class="word-top">حروف</span>
+                <span class="word-bottom">الأندلس</span>
+            </div>
+        </div>
+
+        <!-- شبكة الـ 20 خلية (4 صفوف × 5 أعمدة) -->
+        <div id="hex-grid" class="honeycomb-container mb-auto"></div>
+    </div>
+
+    <!-- 5. نافذة السؤال التفاعلية -->
+    <div id="question-modal" style="display: none;" class="modal">
+        <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl w-full max-w-2xl text-center relative shadow-2xl">
+            <button type="button" onclick="closeQuestionModalLocally()" class="absolute top-4 left-4 text-gray-400 hover:text-white text-3xl font-bold hide-on-projector cursor-pointer">&times;</button>
+            
+            <div id="golden-banner" class="hidden bg-amber-500 text-slate-950 font-bold py-1.5 px-4 rounded-full mb-4 text-sm mx-auto w-fit animate-pulse shadow-lg">🌟 خلية ذهبية (نقطتان) 🌟</div>
+
+            <div class="w-full bg-slate-800 rounded-full mb-4">
+                <div id="timer-bar" class="timer-bar" style="width: 100%;"></div>
+            </div>
+            <div id="timer-text" class="text-4xl font-black mb-4 text-amber-400">30</div>
+            
+            <h2 id="question-text" class="text-2xl md:text-3xl font-bold mb-4 leading-relaxed text-slate-100">...</h2>
+            
+            <!-- معاينة الإجابة الصحيحة للمشرف فقط -->
+            <div id="admin-answer-preview" class="hide-on-projector bg-slate-950 border border-emerald-800/70 text-emerald-400 font-bold py-2 px-5 rounded-xl mb-6 text-sm inline-block">
+                الإجابة الصحيحة: <span id="admin-answer-text">...</span>
+            </div>
+
+            <div id="choices-container" class="hidden grid grid-cols-2 gap-3 mb-6 text-base"></div>
+            
+            <!-- أزرار تحكم المشرف بالسؤال -->
+            <div class="hide-on-projector border-t border-slate-800 pt-5 mt-2">
+                <div class="flex gap-2 justify-center mb-5 flex-wrap">
+                    <button type="button" id="reveal-btn" onclick="cmdRevealQuestion()" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2.5 rounded-lg font-bold text-xs transition border border-indigo-400 shadow-md cursor-pointer">👁️ إظهار السؤال للجمهور</button>
+                    <button type="button" onclick="cmdStartTimer()" class="bg-green-600 hover:bg-green-700 px-4 py-2.5 rounded-lg font-bold text-xs transition border border-green-400 shadow-md cursor-pointer">⏱️ تشغيل المؤقت</button>
+                    <button type="button" onclick="cmdShowChoices()" class="bg-blue-600 hover:bg-blue-700 px-3.5 py-2.5 rounded-lg font-bold text-xs transition cursor-pointer">🔤 الخيارات</button>
+                    <button type="button" onclick="cmdAddTime()" class="bg-blue-700 hover:bg-blue-800 px-3.5 py-2.5 rounded-lg font-bold text-xs transition cursor-pointer">+15ث</button>
+                    <button type="button" onclick="cmdFetchAlternativeQuestion()" class="bg-purple-600 hover:bg-purple-700 px-3.5 py-2.5 rounded-lg font-bold text-xs transition border border-purple-400 shadow-md cursor-pointer">🔄 سؤال بديل</button>
+                </div>
+                
+                <div id="main-answer-actions" class="border-t border-slate-800 pt-4">
+                    <span class="text-gray-400 block mb-3 text-xs font-bold">منح الخلية والنقطة للفريق:</span>
+                    <div id="assign-points-buttons" class="flex gap-2.5 flex-wrap justify-center mb-4"></div>
+                    <div class="flex gap-3 justify-center">
+                        <button type="button" onclick="cmdWrongAnswer()" class="bg-red-600 hover:bg-red-700 px-5 py-2 rounded-lg text-white font-bold text-xs shadow cursor-pointer">❌ إجابة خاطئة (تحويل للسرقة)</button>
+                    </div>
+                </div>
+
+                <div id="steal-actions" class="hidden border-t border-slate-800 pt-4">
+                    <span class="text-amber-400 block mb-3 font-bold text-xs">فرصة سرقة الخلية! من أجاب بشكل صحيح؟</span>
+                    <div id="steal-points-buttons" class="flex gap-2.5 flex-wrap justify-center mb-4"></div>
+                    <button type="button" onclick="closeQuestionModalLocally()" class="bg-slate-800 hover:bg-slate-700 px-6 py-2 rounded-lg text-white font-bold text-xs w-full cursor-pointer">لم يجب أحد (إغلاق السؤال)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. لوحة إدارة بنك الأسئلة وتخصيص المراحل -->
+    <div id="admin-modal" style="display: none;" class="modal hide-on-projector">
+        <div class="bg-slate-900 border border-slate-800 p-6 md:p-8 rounded-2xl w-full max-w-3xl text-right relative max-h-[90vh] overflow-y-auto shadow-2xl">
+            <button type="button" onclick="closeAdmin()" class="absolute top-4 left-4 text-gray-400 hover:text-white text-3xl font-bold cursor-pointer">&times;</button>
+            <h2 class="text-xl md:text-2xl font-bold text-amber-400 mb-5 border-b border-slate-800 pb-3">لوحة التحكم وبنك الأسئلة</h2>
+            
+            <div class="flex gap-2 mb-5 border-b border-slate-800 pb-4">
+                <button type="button" onclick="switchAdminTab('bank')" id="tab-btn-bank" class="px-4 py-2 rounded-lg text-xs md:text-sm font-bold bg-amber-500 text-slate-950 transition cursor-pointer">📚 بنك الأسئلة العام</button>
+                <button type="button" onclick="switchAdminTab('stages')" id="tab-btn-stages" class="px-4 py-2 rounded-lg text-xs md:text-sm font-bold bg-slate-800 text-slate-300 transition cursor-pointer">🎯 تخصيص وإدارة المراحل</button>
+            </div>
+
+            <!-- التبويب الأول: بنك الأسئلة العام -->
+            <div id="admin-tab-bank" class="space-y-4 text-xs md:text-sm">
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <h3 class="mb-2 text-green-400 font-bold">📥 استيراد جماعي من Excel (العمود A: الحرف | B: السؤال | C: الإجابة)</h3>
+                    <input type="file" id="excel-file" accept=".xlsx, .xls, .csv" class="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg mb-3 text-xs">
+                    <button type="button" onclick="importToGlobalBank()" class="bg-green-600 hover:bg-green-700 w-full py-2 rounded-lg font-bold transition cursor-pointer text-white">رفع وإضافة للبنك المركزي</button>
+                </div>
+
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <h4 class="mb-3 text-amber-400 font-bold">➕ إضافة سؤال يدوي للبنك</h4>
+                    <div class="grid grid-cols-2 gap-3 mb-3">
+                        <input type="text" id="bank-q-letter" placeholder="الحرف (مثال: أ)" class="p-2 bg-slate-900 border border-slate-800 rounded-lg text-center text-white outline-none" maxlength="2">
+                        <input type="text" id="bank-q-answer" placeholder="الإجابة الصحيحة" class="p-2 bg-slate-900 border border-slate-800 rounded-lg text-white outline-none">
+                    </div>
+                    <textarea id="bank-q-text" placeholder="اكتب نص السؤال هنا..." class="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg mb-2 text-white outline-none" rows="2"></textarea>
+                    <input type="text" id="bank-q-choices" placeholder="خيارات إضافية مفصولة بفاصلة (اختياري)" class="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg mb-3 text-white outline-none">
+                    <button type="button" onclick="addSingleToGlobalBank()" class="bg-amber-500 hover:bg-amber-600 text-slate-950 w-full py-2 rounded-lg font-bold cursor-pointer">حفظ السؤال في البنك</button>
+                </div>
+
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 class="text-slate-300 font-bold">استعراض وحذف أسئلة البنك حسب الحرف</h4>
+                        <span id="bank-letter-count" class="text-xs text-amber-400 font-bold"></span>
+                    </div>
+                    <select id="bank-filter-letter" class="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg mb-3 text-white outline-none" onchange="renderBankQuestionsList()"></select>
+                    <div id="bank-questions-list" class="space-y-2 max-h-48 overflow-y-auto pr-1"></div>
+                </div>
+            </div>
+
+            <!-- التبويب الثاني: تخصيص وإضافة المراحل -->
+            <div id="admin-tab-stages" class="space-y-4 text-xs md:text-sm hidden">
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-gray-300 font-bold">اختر المرحلة للتعديل:</label>
+                        <button type="button" onclick="deleteSelectedStage()" class="text-xs bg-red-900/50 hover:bg-red-800 text-red-200 px-3 py-1 rounded-lg border border-red-800 cursor-pointer">🗑️ حذف هذه المرحلة</button>
+                    </div>
+                    <select id="admin-stage-select" class="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg mb-4 text-white outline-none" onchange="renderAdminStageData()"></select>
+                    
+                    <div class="flex gap-2 pt-3 border-t border-slate-800">
+                        <input type="text" id="new-stage-name" placeholder="اسم المرحلة الجديدة (مثال: المرحلة الثالثة)..." class="p-2 bg-slate-900 border border-slate-800 rounded-lg flex-1 text-white outline-none">
+                        <button type="button" onclick="addNewStage()" class="bg-amber-500 hover:bg-amber-600 text-slate-950 px-4 py-2 rounded-lg font-bold cursor-pointer whitespace-nowrap">+ إضافة مرحلة</button>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <h4 class="mb-3 text-amber-400 font-bold">حروف شبكة هذه المرحلة (20 خلية)</h4>
+                    <div id="grid-letters-container" class="letters-grid mb-4"></div>
+                    <button type="button" onclick="updateStageGridLetters()" class="bg-blue-600 hover:bg-blue-700 text-white w-full py-2 rounded-lg font-bold cursor-pointer">حفظ حروف الشبكة</button>
+                </div>
+
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <h4 class="mb-2 text-green-400 font-bold">تحديد أسئلة المرحلة من البنك المركزي</h4>
+                    <p class="text-xs text-gray-400 mb-3">اختر الحرف ثم ضع علامة (☑️) بجانب الأسئلة التي تريد اعتمادها لهذه المرحلة:</p>
+                    <select id="stage-picker-letter" class="w-full p-2 bg-slate-900 border border-slate-800 rounded-lg mb-3 text-white outline-none" onchange="renderStagePickerList()"></select>
+                    <div id="stage-picker-list" class="space-y-2 max-h-48 overflow-y-auto pr-1"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. نافذة إعلان الفوز بالمرحلة أو نهاية المسابقة -->
+    <div id="final-results-modal" style="display: none;" class="modal">
+        <div class="bg-slate-900 border border-slate-800 p-8 rounded-2xl w-full max-w-md text-center shadow-2xl">
+            <div class="title-container mb-8 scale-75">
+                <div class="andalusia-3d-title">
+                    <span class="word-top">حروف</span>
+                    <span class="word-bottom">الأندلس</span>
+                </div>
+            </div>
+            <h2 id="results-modal-title" class="text-3xl font-extrabold text-amber-400 mb-4">🎉 مبروك الفوز! 🎉</h2>
+            <div id="winner-message" class="text-2xl mb-6 font-bold text-white"></div>
+            <div id="final-rankings" class="space-y-3 mb-8 text-right text-sm"></div>
+            <button type="button" onclick="closeResultsModal()" class="bg-amber-500 hover:bg-amber-600 text-slate-950 px-6 py-3 rounded-xl font-bold hide-on-projector w-full transition cursor-pointer">متابعة اللعب / إغلاق النافذة</button>
+        </div>
+    </div>
+
+    <!-- الكود البرمجي الكامل والمدمج -->
+    <script>
+        let roomCode = "andalus-room-1";
+        let userRole = "admin";
+        let db = null;
+        let isProcessingClick = false; 
+        let localTimerInterval = null;
+
+        const defaultLetters = ['أ','ب','ت','ث','ج','ح','خ','د','ذ','ر','ز','س','ش','ص','ض','ط','ظ','ع','غ','ف'];
+        const allArabicLetters = ['أ','ب','ت','ث','ج','ح','خ','د','ذ','ر','ز','س','ش','ص','ض','ط','ظ','ع','غ','ف','ق','ك','ل','م','ن','ه','و','ي'];
+
+        let gameState = {
+            teams: [],
+            stages: [
+                { id: 1, name: "المرحلة الأولى", selectedQuestionIds: {}, gridLetters: [...defaultLetters], hexOwnership: {}, specialCells: {} },
+                { id: 2, name: "المرحلة الثانية", selectedQuestionIds: {}, gridLetters: [...defaultLetters], hexOwnership: {}, specialCells: {} }
+            ],
+            currentStageIndex: 0,
+            defaultTime: 30,
+            flashingHex: null,
+            activeQuestion: null,
+            isQuestionRevealed: false,
+            areChoicesRevealed: false,
+            timerSeconds: 30,
+            winnerAnnouncement: null
+        };
+
+        let globalBankState = {}; 
+
+        const gameSounds = {
+            tick: new Audio('https://freesound.org/data/previews/254/254316_4062622-lq.mp3'),
+            correct: new Audio('https://freesound.org/data/previews/320/320655_527080-lq.mp3'),
+            wrong: new Audio('https://freesound.org/data/previews/142/142608_1840739-lq.mp3'),
+            win: new Audio('https://freesound.org/data/previews/274/274180_4062622-lq.mp3')
+        };
+
+        function playSound(type) {
+            if (gameSounds[type]) {
+                gameSounds[type].currentTime = 0;
+                gameSounds[type].play().catch(() => {});
+            }
+        }
+
+        function sanitizeForFirebase(obj) {
+            return JSON.parse(JSON.stringify(obj));
+        }
+
+        // دوال مساعدة صارمة لإظهار وإخفاء النوافذ والشاشات
+        function showModal(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.remove('hidden');
+            el.classList.add('active');
+            el.style.display = 'flex';
+        }
+
+        function hideModal(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.remove('active');
+            el.classList.add('hidden');
+            el.style.display = 'none';
+        }
+
+        function showScreen(id, displayType) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.remove('hidden');
+            el.style.display = displayType || 'block';
+        }
+
+        function hideScreen(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.add('hidden');
+            el.style.display = 'none';
+        }
+
+        // تشغيل التطبيق عند ضغط لوحة المشرف أو شاشة العرض
+        function initApp(role) {
+            userRole = role;
+            const roomInput = document.getElementById('room-code-input');
+            if (roomInput && roomInput.value.trim()) {
+                roomCode = roomInput.value.trim();
+            }
+            
+            if (userRole === 'screen') {
+                document.body.classList.add('projector-mode');
+                const codeSpan = document.getElementById('display-room-code');
+                if (codeSpan) codeSpan.innerText = roomCode;
+            } else {
+                document.body.classList.remove('projector-mode');
+            }
+
+            hideModal('role-selector-modal');
+            renderUIFromState();
+            initFirebaseAndSync();
+        }
+
+        // دعم الاسمين معاً لمنع أي خطأ
+        window.selectAppRole = initApp;
+
+        function openProjectorWindow() {
+            const url = `${window.location.pathname}?room=${encodeURIComponent(roomCode)}&role=screen`;
+            window.open(url, '_blank');
+        }
+
+        function initFirebaseAndSync() {
+            try {
+                const firebaseConfig = { databaseURL: "https://haroof-quiz-default-rtdb.firebaseio.com/" };
+                if (typeof firebase !== 'undefined') {
+                    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+                    db = firebase.database();
+                }
+            } catch (e) {
+                console.warn("Firebase warning:", e);
+            }
+
+            if (!db) return;
+
+            db.ref(`rooms/${roomCode}/state`).on('value', (snapshot) => {
+                const serverData = snapshot.val();
+                if (serverData) {
+                    gameState.teams = Array.isArray(serverData.teams) ? serverData.teams : [];
+                    gameState.stages = Array.isArray(serverData.stages) && serverData.stages.length > 0 
+                        ? serverData.stages 
+                        : [{ id: 1, name: "المرحلة الأولى", selectedQuestionIds: {}, gridLetters: [...defaultLetters], hexOwnership: {}, specialCells: {} }];
+                    
+                    gameState.stages.forEach(st => {
+                        if (!Array.isArray(st.gridLetters) || st.gridLetters.length !== 20) {
+                            st.gridLetters = [...defaultLetters];
+                        }
+                        if (!st.selectedQuestionIds) st.selectedQuestionIds = {};
+                        if (!st.hexOwnership) st.hexOwnership = {};
+                        if (!st.specialCells) st.specialCells = {};
+                    });
+
+                    gameState.currentStageIndex = (typeof serverData.currentStageIndex === 'number' && gameState.stages[serverData.currentStageIndex])
+                        ? serverData.currentStageIndex : 0;
+                    gameState.defaultTime = serverData.defaultTime || 30;
+                    gameState.flashingHex = serverData.flashingHex || null;
+                    gameState.activeQuestion = serverData.activeQuestion || null;
+                    gameState.isQuestionRevealed = Boolean(serverData.isQuestionRevealed);
+                    gameState.areChoicesRevealed = Boolean(serverData.areChoicesRevealed);
+                    gameState.timerSeconds = serverData.timerSeconds ?? gameState.defaultTime;
+                    gameState.winnerAnnouncement = serverData.winnerAnnouncement || null;
+
+                    renderUIFromState();
+                } else {
+                    if (userRole === 'admin') pushStateToCloud();
+                    renderUIFromState();
+                }
+            });
+
+            db.ref(`rooms/${roomCode}/bank`).on('value', (snapshot) => {
+                globalBankState = snapshot.val() || {};
+                populateLetterDropdowns();
+            });
+
+            db.ref(`rooms/${roomCode}/commands`).on('value', (snapshot) => {
+                const cmd = snapshot.val();
+                if (!cmd || (Date.now() - cmd.timestamp > 5000)) return; 
+                
+                if (userRole === 'screen') {
+                    switch (cmd.action) {
+                        case 'START_TIMER': startLocalTimerLogic(); break;
+                        case 'SHOW_CHOICES': document.getElementById('choices-container').classList.remove('hidden'); break;
+                        case 'ADD_TIME': gameState.timerSeconds += 15; updateTimerUI(); break;
+                        case 'WRONG_ANSWER': stopLocalTimerLogic(); playSound('wrong'); break;
+                        case 'CLOSE_QUESTION': stopLocalTimerLogic(); break;
+                        case 'CELEBRATE': 
+                            if (typeof confetti === 'function') confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } }); 
+                            playSound('correct'); 
+                            break;
+                        case 'WIN_STAGE':
+                            if (typeof confetti === 'function') confetti({ particleCount: 200, spread: 100, origin: { y: 0.5 } });
+                            playSound('win');
+                            break;
+                    }
+                }
+            });
+        }
+
+        function pushStateToCloud() {
+            if (db && userRole === 'admin') {
+                db.ref(`rooms/${roomCode}/state`).set(sanitizeForFirebase(gameState));
+            }
+        }
+
+        function pushBankToCloud() {
+            if (db && userRole === 'admin') {
+                db.ref(`rooms/${roomCode}/bank`).set(sanitizeForFirebase(globalBankState));
+            }
+        }
+
+        function sendLiveCommand(action) {
+            if (userRole === 'admin' && db) {
+                db.ref(`rooms/${roomCode}/commands`).set({ action: action, timestamp: Date.now() });
+            }
+        }
+
+        function renderUIFromState() {
+            if (gameState.teams && gameState.teams.length > 0) {
+                hideScreen('setup-screen');
+                hideScreen('waiting-screen');
+                showScreen('game-screen', 'flex');
+                renderStagesBar();
+                renderScoreboard();
+                renderManualWinButtons();
+                renderHexGrid();
+            } else {
+                hideScreen('game-screen');
+                if (userRole === 'admin') {
+                    showScreen('setup-screen', 'block');
+                    hideScreen('waiting-screen');
+                    const teamsCont = document.getElementById('teams-input');
+                    if (teamsCont && teamsCont.children.length === 0) renderTeamInputs();
+                } else {
+                    hideScreen('setup-screen');
+                    showScreen('waiting-screen', 'flex');
+                }
+            }
+
+            if (gameState.activeQuestion) {
+                if (userRole === 'screen' && !gameState.isQuestionRevealed) {
+                    hideModal('question-modal');
+                } else {
+                    showModal('question-modal');
+                    document.getElementById('question-text').innerText = gameState.activeQuestion.text || '';
+                    
+                    const ansText = document.getElementById('admin-answer-text');
+                    if (ansText) ansText.innerText = gameState.activeQuestion.answer || '';
+
+                    const cCont = document.getElementById('choices-container');
+                    if (gameState.activeQuestion.choices && gameState.activeQuestion.choices.length > 1) {
+                        cCont.innerHTML = '';
+                        gameState.activeQuestion.choices.forEach(c => {
+                            cCont.innerHTML += `<div class="bg-slate-800 p-2.5 rounded-lg border border-slate-700 font-bold">${c}</div>`;
+                        });
+                        if (userRole === 'admin' || gameState.areChoicesRevealed) cCont.classList.remove('hidden');
+                        else cCont.classList.add('hidden'); 
+                    } else {
+                        cCont.classList.add('hidden');
+                    }
+
+                    const banner = document.getElementById('golden-banner');
+                    if (gameState.activeQuestion.isGolden) banner.classList.remove('hidden');
+                    else banner.classList.add('hidden');
+
+                    document.getElementById('timer-text').innerText = gameState.timerSeconds;
+                    document.getElementById('timer-bar').style.width = `${Math.max(0, (gameState.timerSeconds / gameState.defaultTime) * 100)}%`;
+
+                    if (userRole === 'admin') {
+                        const assignDiv = document.getElementById('assign-points-buttons');
+                        const stealDiv = document.getElementById('steal-points-buttons');
+                        assignDiv.innerHTML = ''; stealDiv.innerHTML = '';
+                        gameState.teams.forEach((t, idx) => {
+                            const bHtml = `<button type="button" onclick="cmdAssignPoint(${idx})" class="px-4 py-2 rounded-lg text-white font-bold text-xs cursor-pointer shadow hover:opacity-90" style="background-color: ${t.color}">${t.name}</button>`;
+                            assignDiv.innerHTML += bHtml;
+                            stealDiv.innerHTML += bHtml;
+                        });
+                    }
+                }
+            } else {
+                hideModal('question-modal');
+            }
+
+            if (gameState.winnerAnnouncement) {
+                document.getElementById('results-modal-title').innerText = gameState.winnerAnnouncement.title || "🎉 مبروك الفوز! 🎉";
+                document.getElementById('winner-message').innerHTML = gameState.winnerAnnouncement.message || "";
+                
+                let html = '';
+                const sorted = [...gameState.teams].sort((a, b) => b.score - a.score);
+                sorted.forEach((t, i) => {
+                    html += `<div class="bg-slate-800 p-3 rounded-xl flex justify-between items-center text-sm border border-slate-700" style="border-right: 5px solid ${t.color}">
+                        <span>${i+1}. ${t.name}</span><span class="font-bold text-amber-400 text-lg">${t.score} نقطة</span>
+                    </div>`;
+                });
+                document.getElementById('final-rankings').innerHTML = html;
+                showModal('final-results-modal');
+            } else {
+                hideModal('final-results-modal');
+            }
+        }
+
+        function renderTeamInputs() {
+            const countSelect = document.getElementById('team-count');
+            const count = countSelect ? parseInt(countSelect.value) : 2;
+            const container = document.getElementById('teams-input');
+            if (!container) return;
+
+            const colors = ['#ef4444', '#3b82f6', '#22c55e', '#a855f7'];
+            container.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                const existingTeam = gameState.teams && gameState.teams[i];
+                const tName = existingTeam ? existingTeam.name : `فريق ${i+1}`;
+                const tColor = existingTeam ? existingTeam.color : colors[i];
+
+                container.innerHTML += `<div>
+                    <label class="block text-xs mb-1 text-gray-400">اسم الفريق ${i+1}</label>
+                    <input type="text" id="t-name-${i}" value="${tName}" class="w-full p-2 bg-slate-950 border border-slate-800 rounded text-xs mb-1 text-white outline-none">
+                    <input type="color" id="t-color-${i}" value="${tColor}" class="w-full h-8 bg-slate-950 rounded cursor-pointer">
+                </div>`;
+            }
+        }
+
+        function openSetupScreen() {
+            if (userRole === 'screen') return;
+            const countSelect = document.getElementById('team-count');
+            if (countSelect && gameState.teams && gameState.teams.length >= 2) {
+                countSelect.value = gameState.teams.length;
+            }
+            renderTeamInputs();
+            hideScreen('game-screen');
+            showScreen('setup-screen', 'block');
+        }
+
+        function startNewMatch() {
+            const count = parseInt(document.getElementById('team-count').value) || 2;
+            gameState.defaultTime = parseInt(document.getElementById('default-time').value) || 30;
+            const newTeams = [];
+            for (let i = 0; i < count; i++) {
+                const oldScore = (gameState.teams && gameState.teams[i]) ? gameState.teams[i].score : 0;
+                const oldStages = (gameState.teams && gameState.teams[i]) ? gameState.teams[i].stagesWon : 0;
+                newTeams.push({ 
+                    name: document.getElementById(`t-name-${i}`).value.trim() || `فريق ${i+1}`, 
+                    color: document.getElementById(`t-color-${i}`).value, 
+                    score: oldScore, 
+                    stagesWon: oldStages 
+                });
+            }
+            gameState.teams = newTeams;
+            generateSpecialCell();
+            pushStateToCloud();
+            renderUIFromState();
+        }
+
+        function generateSpecialCell() {
+            const stage = gameState.stages[gameState.currentStageIndex];
+            if (!stage.specialCells) stage.specialCells = {};
+            if (Object.keys(stage.specialCells).length === 0) {
+                stage.specialCells[`${Math.floor(Math.random() * 4)}-${Math.floor(Math.random() * 5)}`] = "golden";
+            }
+        }
+
+        function renderScoreboard() {
+            const board = document.getElementById('scoreboard');
+            if (!board) return;
+            board.innerHTML = '';
+            gameState.teams.forEach(t => {
+                board.innerHTML += `
+                    <div class="bg-slate-900 border border-slate-800 px-4 py-1.5 rounded-lg flex items-center justify-between gap-4 shadow-sm transition w-auto" style="border-right: 4px solid ${t.color}">
+                        <span class="font-bold text-sm text-slate-200">${t.name}</span>
+                        <span class="text-xs text-gray-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                            النقاط: <span class="font-black text-amber-400 text-sm">${t.score}</span>
+                        </span>
+                    </div>`;
+            });
+        }
+
+        function renderManualWinButtons() {
+            const container = document.getElementById('manual-win-buttons');
+            if (!container) return;
+            container.innerHTML = '';
+
+            gameState.teams.forEach((t, idx) => {
+                container.innerHTML += `
+                    <button type="button" onclick="declareStageWinner(${idx})" class="px-2.5 py-1 rounded-lg text-white font-bold text-xs transition shadow cursor-pointer hover:opacity-90" style="background-color: ${t.color}">
+                        🏆 ${t.name}
+                    </button>`;
+            });
+        }
+
+        function declareStageWinner(teamIndex) {
+            if (userRole === 'screen') return;
+            const team = gameState.teams[teamIndex];
+            if (!team) return;
+
+            const stage = gameState.stages[gameState.currentStageIndex];
+            if (!confirm(`هل أنت متأكد من إعلان فوز (${team.name}) في (${stage.name})؟`)) return;
+
+            team.stagesWon = (team.stagesWon || 0) + 1;
+            gameState.winnerAnnouncement = {
+                title: `🎉 بطل ${stage.name} 🎉`,
+                message: `🏆 الفائز بالمرحلة: <span style="color:${team.color}">${team.name}</span>`
+            };
+
+            if (typeof confetti === 'function') confetti({ particleCount: 200, spread: 100, origin: { y: 0.5 } });
+            playSound('win');
+
+            pushStateToCloud();
+            sendLiveCommand('WIN_STAGE');
+            renderUIFromState();
+        }
+
+        function closeResultsModal() {
+            if (userRole === 'screen') return;
+            gameState.winnerAnnouncement = null;
+            pushStateToCloud();
+            renderUIFromState();
+        }
+
+        function renderHexGrid() {
+            const grid = document.getElementById('hex-grid');
+            const stage = gameState.stages[gameState.currentStageIndex];
+            const letters = (stage.gridLetters && stage.gridLetters.length === 20) ? stage.gridLetters : defaultLetters;
+            
+            if (grid.children.length === 4) {
+                let lIdx = 0;
+                for (let r = 0; r < 4; r++) {
+                    for (let c = 0; c < 5; c++) {
+                        const hex = grid.children[r].children[c];
+                        const cellId = `${r}-${c}`;
+                        const hexInner = hex.querySelector('.hex-inner');
+                        const currentLetter = letters[lIdx % 20];
+                        
+                        hex.className = 'hex';
+                        hexInner.style.backgroundColor = '#1e293b';
+                        hexInner.innerText = currentLetter;
+                        
+                        if (stage.hexOwnership && stage.hexOwnership[cellId] !== undefined && gameState.teams[stage.hexOwnership[cellId]]) {
+                            hex.classList.add('owned');
+                            hexInner.style.backgroundColor = gameState.teams[stage.hexOwnership[cellId]].color;
+                            hex.onclick = null;
+                        } else {
+                            if (userRole === 'admin') hex.onclick = () => selectHex(r, c, currentLetter);
+                            else hex.onclick = null;
+                        }
+
+                        if ((gameState.flashingHex && gameState.flashingHex.r === r && gameState.flashingHex.c === c) || 
+                            (gameState.activeQuestion && gameState.activeQuestion.r === r && gameState.activeQuestion.c === c)) {
+                            hex.classList.add('flashing');
+                        }
+                        lIdx++;
+                    }
+                }
+                return;
+            }
+
+            grid.innerHTML = '';
+            let lIdx = 0;
+            for (let r = 0; r < 4; r++) {
+                const row = document.createElement('div');
+                row.className = 'hex-row';
+                if (r % 2 !== 0) row.classList.add('offset');
+                for (let c = 0; c < 5; c++) {
+                    const cellId = `${r}-${c}`;
+                    const currentLetter = letters[lIdx % 20];
+                    const hex = document.createElement('div');
+                    hex.className = 'hex';
+                    hex.id = `hex-${r}-${c}`;
+                    
+                    let innerBg = '#1e293b';
+                    let isOwned = false;
+                    if (stage.hexOwnership && stage.hexOwnership[cellId] !== undefined && gameState.teams[stage.hexOwnership[cellId]]) {
+                        isOwned = true;
+                        hex.classList.add('owned');
+                        innerBg = gameState.teams[stage.hexOwnership[cellId]].color;
+                    }
+
+                    if ((gameState.flashingHex && gameState.flashingHex.r === r && gameState.flashingHex.c === c) || 
+                        (gameState.activeQuestion && gameState.activeQuestion.r === r && gameState.activeQuestion.c === c)) {
+                        hex.classList.add('flashing');
+                    }
+
+                    hex.innerHTML = `<div class="hex-inner" style="background-color: ${innerBg}">${currentLetter}</div>`;
+                    if (!isOwned && userRole === 'admin') hex.onclick = () => selectHex(r, c, currentLetter);
+                    row.appendChild(hex);
+                    lIdx++;
+                }
+                grid.appendChild(row);
+            }
+        }
+
+        function getQuestionsForLetterFromBank(letter) {
+            if (globalBankState[letter] && globalBankState[letter].length > 0) return globalBankState[letter];
+            if (letter === 'أ' && globalBankState['ا']) return globalBankState['ا'];
+            if (letter === 'ا' && globalBankState['أ']) return globalBankState['أ'];
+            if (letter === 'ه' && globalBankState['هـ']) return globalBankState['هـ'];
+            if (letter === 'هـ' && globalBankState['ه']) return globalBankState['ه'];
+            return [];
+        }
+
+        function selectHex(r, c, letter) {
+            if (userRole === 'screen' || isProcessingClick) return;
+            const stage = gameState.stages[gameState.currentStageIndex];
+            if (stage.hexOwnership && stage.hexOwnership[`${r}-${c}`] !== undefined) return;
+
+            isProcessingClick = true;
+            const hexEl = document.getElementById(`hex-${r}-${c}`);
+            if (hexEl) hexEl.classList.add('flashing');
+            
+            gameState.flashingHex = { r, c };
+            pushStateToCloud();
+
+            setTimeout(() => {
+                let qData = null;
+                const bankList = getQuestionsForLetterFromBank(letter);
+
+                if (stage.selectedQuestionIds && stage.selectedQuestionIds[letter] && stage.selectedQuestionIds[letter].length > 0) {
+                    const qIds = stage.selectedQuestionIds[letter];
+                    const qId = qIds[Math.floor(Math.random() * qIds.length)];
+                    qData = bankList.find(q => q.id === qId);
+                }
+
+                if (!qData && bankList.length > 0) {
+                    qData = bankList[Math.floor(Math.random() * bankList.length)];
+                }
+
+                if (!qData) {
+                    qData = { id: 'def_' + letter, text: `سؤال تفاعلي يبدأ بحرف (${letter})؟`, answer: letter, choices: [letter] };
+                }
+
+                const isGolden = Boolean(stage.specialCells && stage.specialCells[`${r}-${c}`] === "golden");
+
+                const revealBtn = document.getElementById('reveal-btn');
+                if (revealBtn) {
+                    revealBtn.className = "bg-indigo-600 hover:bg-indigo-700 px-4 py-2.5 rounded-lg font-bold text-xs transition border border-indigo-400 shadow-md cursor-pointer";
+                    revealBtn.innerText = "👁️ إظهار السؤال للجمهور";
+                }
+                
+                document.getElementById('main-answer-actions').classList.remove('hidden');
+                document.getElementById('steal-actions').classList.add('hidden');
+
+                gameState.flashingHex = null;
+                gameState.activeQuestion = { 
+                    id: qData.id || 'q_temp',
+                    text: qData.text || '',
+                    answer: qData.answer || '',
+                    choices: Array.isArray(qData.choices) ? qData.choices : [qData.answer || ''],
+                    r: r, 
+                    c: c, 
+                    letter: letter, 
+                    isGolden: isGolden 
+                };
+                gameState.isQuestionRevealed = false; 
+                gameState.areChoicesRevealed = false;
+                gameState.timerSeconds = gameState.defaultTime;
+
+                pushStateToCloud();
+                renderUIFromState();
+                isProcessingClick = false;
+            }, 1000); 
+        }
+
+        function cmdRevealQuestion() {
+            gameState.isQuestionRevealed = true;
+            pushStateToCloud();
+            const revealBtn = document.getElementById('reveal-btn');
+            if (revealBtn) {
+                revealBtn.className = "bg-gray-600 px-4 py-2.5 rounded-lg font-bold text-xs transition text-gray-300";
+                revealBtn.innerText = "✅ معروض للجمهور";
+            }
+        }
+
+        function cmdFetchAlternativeQuestion() {
+            if (!gameState.activeQuestion) return;
+            const letter = gameState.activeQuestion.letter;
+            const bList = getQuestionsForLetterFromBank(letter);
+            if (bList.length > 0) {
+                const qData = bList[Math.floor(Math.random() * bList.length)];
+                gameState.activeQuestion = { 
+                    id: qData.id || 'q_alt',
+                    text: qData.text || '',
+                    answer: qData.answer || '',
+                    choices: Array.isArray(qData.choices) ? qData.choices : [qData.answer || ''],
+                    r: gameState.activeQuestion.r, 
+                    c: gameState.activeQuestion.c, 
+                    letter: letter, 
+                    isGolden: Boolean(gameState.activeQuestion.isGolden) 
+                };
+                gameState.isQuestionRevealed = false; 
+                gameState.areChoicesRevealed = false;
+                pushStateToCloud();
+                renderUIFromState();
+            } else {
+                alert("لا توجد أسئلة أخرى لهذا الحرف في البنك المركزي!");
+            }
+        }
+
+        function cmdStartTimer() {
+            cmdRevealQuestion(); 
+            sendLiveCommand('START_TIMER'); 
+            startLocalTimerLogic(); 
+        }
+
+        function startLocalTimerLogic() {
+            clearInterval(localTimerInterval);
+            updateTimerUI();
+            localTimerInterval = setInterval(() => {
+                if (gameState.timerSeconds > 0) {
+                    gameState.timerSeconds--;
+                    updateTimerUI();
+                    if (gameState.timerSeconds <= 5 && gameState.timerSeconds > 0) playSound('tick');
+                } else {
+                    stopLocalTimerLogic();
+                    if (userRole === 'admin') cmdWrongAnswer(); 
+                }
+            }, 1000);
+        }
+
+        function stopLocalTimerLogic() {
+            clearInterval(localTimerInterval);
+        }
+
+        function updateTimerUI() {
+            document.getElementById('timer-text').innerText = gameState.timerSeconds;
+            const pct = (gameState.timerSeconds / gameState.defaultTime) * 100;
+            document.getElementById('timer-bar').style.width = `${Math.max(0, pct)}%`;
+        }
+
+        function cmdShowChoices() { 
+            gameState.areChoicesRevealed = true;
+            pushStateToCloud();
+            sendLiveCommand('SHOW_CHOICES');
+            renderUIFromState();
+        }
+
+        function cmdAddTime() { 
+            gameState.timerSeconds += 15; 
+            updateTimerUI(); 
+            sendLiveCommand('ADD_TIME');
+        }
+
+        function cmdWrongAnswer() {
+            stopLocalTimerLogic();
+            playSound('wrong');
+            document.getElementById('main-answer-actions').classList.add('hidden');
+            document.getElementById('steal-actions').classList.remove('hidden');
+            sendLiveCommand('WRONG_ANSWER');
+        }
+
+        function cmdAssignPoint(teamIndex) {
+            stopLocalTimerLogic();
+            const q = gameState.activeQuestion;
+            const stage = gameState.stages[gameState.currentStageIndex];
+            if (!stage.hexOwnership) stage.hexOwnership = {};
+            stage.hexOwnership[`${q.r}-${q.c}`] = teamIndex;
+            gameState.teams[teamIndex].score += q.isGolden ? 2 : 1;
+
+            if (typeof confetti === 'function') confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
+            playSound('correct');
+
+            gameState.activeQuestion = null;
+            pushStateToCloud();
+            sendLiveCommand('CELEBRATE');
+            renderUIFromState();
+        }
+
+        function closeQuestionModalLocally() {
+            stopLocalTimerLogic();
+            gameState.activeQuestion = null;
+            gameState.flashingHex = null;
+            pushStateToCloud();
+            sendLiveCommand('CLOSE_QUESTION');
+            renderUIFromState();
+        }
+
+        function resetMatchScores() {
+            if (confirm("هل أنت متأكد من تصفير النقاط والخلايا لهذه المرحلة؟")) {
+                gameState.teams.forEach(t => { t.score = 0; t.stagesWon = 0; });
+                gameState.stages[gameState.currentStageIndex].hexOwnership = {};
+                gameState.stages[gameState.currentStageIndex].specialCells = {};
+                generateSpecialCell();
+                gameState.activeQuestion = null;
+                gameState.winnerAnnouncement = null;
+                pushStateToCloud();
+                renderUIFromState();
+            }
+        }
+
+        function triggerEndGame() {
+            if (!gameState.teams || gameState.teams.length === 0) return;
+            const sorted = [...gameState.teams].sort((a, b) => b.score - a.score);
+            gameState.winnerAnnouncement = {
+                title: "🏆 النتيجة النهائية للمسابقة 🏆",
+                message: `المركز الأول: <span style="color:${sorted[0].color}">${sorted[0].name}</span>`
+            };
+            playSound('win');
+            pushStateToCloud();
+            sendLiveCommand('WIN_STAGE');
+            renderUIFromState();
+        }
+
+        function renderStagesBar() {
+            const bar = document.getElementById('stages-bar');
+            if (!bar) return;
+            bar.innerHTML = '';
+            gameState.stages.forEach((st, idx) => {
+                bar.innerHTML += `<button type="button" onclick="switchStage(${idx})" class="px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${idx === gameState.currentStageIndex ? 'bg-amber-500 text-slate-950 shadow-md' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}">${st.name}</button>`;
+            });
+        }
+
+        function switchStage(idx) {
+            if (userRole === 'admin') {
+                gameState.currentStageIndex = idx;
+                gameState.activeQuestion = null;
+                gameState.winnerAnnouncement = null;
+                generateSpecialCell();
+                document.getElementById('hex-grid').innerHTML = '';
+                pushStateToCloud();
+                renderUIFromState();
+            }
+        }
+
+        function openAdmin() {
+            showModal('admin-modal');
+            populateLetterDropdowns();
+            renderAdminStagesDropdown();
+        }
+
+        function closeAdmin() {
+            hideModal('admin-modal');
+        }
+
+        function switchAdminTab(tab) {
+            if (tab === 'bank') {
+                document.getElementById('admin-tab-bank').classList.remove('hidden');
+                document.getElementById('admin-tab-stages').classList.add('hidden');
+                document.getElementById('tab-btn-bank').className = "px-4 py-2 rounded-lg text-xs md:text-sm font-bold bg-amber-500 text-slate-950 transition cursor-pointer";
+                document.getElementById('tab-btn-stages').className = "px-4 py-2 rounded-lg text-xs md:text-sm font-bold bg-slate-800 text-slate-300 transition cursor-pointer";
+            } else {
+                document.getElementById('admin-tab-bank').classList.add('hidden');
+                document.getElementById('admin-tab-stages').classList.remove('hidden');
+                document.getElementById('tab-btn-bank').className = "px-4 py-2 rounded-lg text-xs md:text-sm font-bold bg-slate-800 text-slate-300 transition cursor-pointer";
+                document.getElementById('tab-btn-stages').className = "px-4 py-2 rounded-lg text-xs md:text-sm font-bold bg-amber-500 text-slate-950 transition cursor-pointer";
+                renderAdminStagesDropdown();
+            }
+        }
+
+        function populateLetterDropdowns() {
+            const bankFilter = document.getElementById('bank-filter-letter');
+            const stagePicker = document.getElementById('stage-picker-letter');
+            if (!bankFilter || !stagePicker) return;
+
+            const prevBankVal = bankFilter.value;
+            const prevStageVal = stagePicker.value;
+
+            bankFilter.innerHTML = '<option value="">اختر الحرف...</option>';
+            stagePicker.innerHTML = '<option value="">اختر الحرف...</option>';
+            
+            let allLetters = new Set([...allArabicLetters, ...Object.keys(globalBankState || {})]);
+            gameState.stages.forEach(st => {
+                if (st.gridLetters) st.gridLetters.forEach(l => allLetters.add(l));
+            });
+
+            Array.from(allLetters).sort().forEach(l => {
+                if (!l) return;
+                bankFilter.innerHTML += `<option value="${l}">حرف [ ${l} ]</option>`;
+                stagePicker.innerHTML += `<option value="${l}">حرف [ ${l} ]</option>`;
+            });
+
+            if (prevBankVal) bankFilter.value = prevBankVal;
+            if (prevStageVal) stagePicker.value = prevStageVal;
+        }
+
+        function addSingleToGlobalBank() {
+            const letter = document.getElementById('bank-q-letter').value.trim();
+            const answer = document.getElementById('bank-q-answer').value.trim();
+            const text = document.getElementById('bank-q-text').value.trim();
+            const choicesInput = document.getElementById('bank-q-choices');
+            const choicesStr = choicesInput ? choicesInput.value.trim() : '';
+
+            if (!letter || !answer || !text) return alert("الرجاء إكمال بيانات السؤال (الحرف، السؤال، الإجابة)");
+            if (!globalBankState[letter]) globalBankState[letter] = [];
+
+            let choices = choicesStr ? choicesStr.split(',').map(s => s.trim()).filter(Boolean) : [answer];
+            if (!choices.includes(answer)) choices.unshift(answer);
+
+            globalBankState[letter].push({ 
+                id: 'q_' + Date.now() + Math.random().toString(36).substr(2, 5), 
+                text: text, 
+                answer: answer, 
+                choices: choices 
+            });
+
+            document.getElementById('bank-q-letter').value = '';
+            document.getElementById('bank-q-answer').value = '';
+            document.getElementById('bank-q-text').value = '';
+            if (choicesInput) choicesInput.value = '';
+
+            pushBankToCloud();
+            populateLetterDropdowns();
+            document.getElementById('bank-filter-letter').value = letter;
+            renderBankQuestionsList();
+            alert(`تم حفظ السؤال لحرف (${letter}) في البنك المركزي!`);
+        }
+
+        function renderBankQuestionsList() {
+            const letter = document.getElementById('bank-filter-letter').value;
+            const list = document.getElementById('bank-questions-list');
+            const countSpan = document.getElementById('bank-letter-count');
+            list.innerHTML = '';
+
+            if (!letter || !globalBankState[letter] || globalBankState[letter].length === 0) {
+                if (countSpan) countSpan.innerText = '';
+                list.innerHTML = '<p class="text-gray-500">لا توجد أسئلة مسجلة لهذا الحرف.</p>'; 
+                return;
+            }
+
+            if (countSpan) countSpan.innerText = `عدد الأسئلة: ${globalBankState[letter].length}`;
+
+            globalBankState[letter].forEach((q, idx) => {
+                list.innerHTML += `<div class="bg-slate-900 p-3 rounded-lg flex justify-between items-center border border-slate-800 text-sm">
+                    <span>${idx + 1}. ${q.text} <span class="text-green-400 font-bold">(${q.answer})</span></span>
+                    <button type="button" onclick="deleteFromGlobalBank('${letter}', ${idx})" class="text-red-400 hover:text-red-300 font-bold px-3 transition cursor-pointer">حذف</button>
+                </div>`;
+            });
+        }
+
+        function deleteFromGlobalBank(letter, index) {
+            if (confirm("هل أنت متأكد من حذف هذا السؤال نهائياً من البنك؟")) {
+                globalBankState[letter].splice(index, 1);
+                if (globalBankState[letter].length === 0) delete globalBankState[letter];
+                pushBankToCloud();
+                renderBankQuestionsList();
+            }
+        }
+
+        function importToGlobalBank() {
+            const file = document.getElementById('excel-file').files[0];
+            if (!file) return alert("اختر ملف إكسل أولاً");
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const wb = XLSX.read(new Uint8Array(e.target.result), {type: 'array'});
+                    const sheet = wb.Sheets[wb.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json(sheet, {header: 1});
+                    if (!globalBankState) globalBankState = {};
+                    let count = 0;
+
+                    for (let i = 1; i < rows.length; i++) {
+                        const row = rows[i];
+                        if (!row || row.length === 0) continue;
+
+                        const l = String(row[0] || '').trim().charAt(0);
+                        const t = String(row[1] || '').trim();
+                        const a = String(row[2] || '').trim();
+
+                        if (l && t && a) {
+                            if (!globalBankState[l]) globalBankState[l] = [];
+                            globalBankState[l].push({ 
+                                id: 'q_' + Date.now() + Math.random().toString(36).substr(2, 5), 
+                                text: t, 
+                                answer: a, 
+                                choices: [a] 
+                            });
+                            count++;
+                        }
+                    }
+
+                    pushBankToCloud(); 
+                    populateLetterDropdowns();
+                    alert(`تم استيراد ${count} سؤال بنجاح!`);
+                    renderBankQuestionsList();
+                } catch(err) { 
+                    console.error(err);
+                    alert("خطأ في قراءة الملف، تأكد من صيغته الصحيحة."); 
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function renderAdminStagesDropdown() {
+            const sel = document.getElementById('admin-stage-select');
+            if (!sel) return;
+            sel.innerHTML = '';
+            gameState.stages.forEach((st, i) => sel.innerHTML += `<option value="${i}">${st.name}</option>`);
+            sel.value = gameState.currentStageIndex;
+            renderAdminStageData();
+        }
+
+        function renderAdminStageData() {
+            const sIdx = document.getElementById('admin-stage-select').value;
+            const stage = gameState.stages[sIdx];
+            if (!stage) return;
+            const cCont = document.getElementById('grid-letters-container');
+            cCont.innerHTML = '';
+            const letters = (stage.gridLetters && stage.gridLetters.length === 20) ? stage.gridLetters : defaultLetters;
+            for (let i = 0; i < 20; i++) {
+                cCont.innerHTML += `<input type="text" class="l-input focus:border-amber-500 transition" maxlength="2" value="${letters[i] || ''}">`;
+            }
+            renderStagePickerList();
+        }
+
+        function updateStageGridLetters() {
+            const sIdx = document.getElementById('admin-stage-select').value;
+            const inputs = document.querySelectorAll('.l-input');
+            gameState.stages[sIdx].gridLetters = Array.from(inputs).map(inp => inp.value.trim() || '؟');
+            
+            document.getElementById('hex-grid').innerHTML = '';
+            pushStateToCloud();
+            populateLetterDropdowns();
+            renderUIFromState();
+            alert("تم حفظ حروف الشبكة للمرحلة بنجاح!");
+        }
+
+        function addNewStage() {
+            const name = document.getElementById('new-stage-name').value.trim();
+            if (!name) return alert("أدخل اسم المرحلة الجديدة");
+            gameState.stages.push({ 
+                id: Date.now(), 
+                name: name, 
+                selectedQuestionIds: {}, 
+                gridLetters: [...defaultLetters], 
+                hexOwnership: {}, 
+                specialCells: {} 
+            });
+            document.getElementById('new-stage-name').value = '';
+            gameState.currentStageIndex = gameState.stages.length - 1;
+            pushStateToCloud(); 
+            renderAdminStagesDropdown();
+            renderUIFromState();
+            alert(`تمت إضافة "${name}" بنجاح!`);
+        }
+
+        function deleteSelectedStage() {
+            if (gameState.stages.length <= 1) return alert("لا يمكن حذف المرحلة الوحيدة المتبقية!");
+            const sIdx = parseInt(document.getElementById('admin-stage-select').value);
+            const stageName = gameState.stages[sIdx].name;
+            if (!confirm(`هل أنت متأكد من حذف (${stageName})؟`)) return;
+
+            gameState.stages.splice(sIdx, 1);
+            gameState.currentStageIndex = 0;
+            pushStateToCloud();
+            renderAdminStagesDropdown();
+            renderUIFromState();
+        }
+
+        function renderStagePickerList() {
+            const sIdx = document.getElementById('admin-stage-select').value;
+            const letter = document.getElementById('stage-picker-letter').value;
+            const stage = gameState.stages[sIdx];
+            const list = document.getElementById('stage-picker-list');
+            list.innerHTML = '';
+
+            if (!letter) { list.innerHTML = '<p class="text-gray-500">اختر حرفاً لعرض أسئلته...</p>'; return; }
+            
+            const bList = getQuestionsForLetterFromBank(letter);
+            if (bList.length === 0) {
+                list.innerHTML = `<p class="text-gray-500">لا توجد أسئلة مسجلة لحرف (${letter}) في البنك العام.</p>`; 
+                return;
+            }
+
+            if (!stage.selectedQuestionIds) stage.selectedQuestionIds = {};
+            const selectedForThisStage = stage.selectedQuestionIds[letter] || [];
+
+            bList.forEach(q => {
+                const isChecked = selectedForThisStage.includes(q.id) ? 'checked' : '';
+                list.innerHTML += `<label class="bg-slate-950 p-3 rounded-lg flex items-center justify-between border border-slate-800 cursor-pointer hover:border-slate-600 transition text-sm">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" ${isChecked} onchange="toggleStageQuestion('${letter}', '${q.id}')" class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-amber-500">
+                        <span class="text-slate-200">${q.text} <span class="text-emerald-400 font-bold">(${q.answer})</span></span>
+                    </div>
+                </label>`;
+            });
+        }
+
+        function toggleStageQuestion(letter, qId) {
+            const sIdx = document.getElementById('admin-stage-select').value;
+            const stage = gameState.stages[sIdx];
+            if (!stage.selectedQuestionIds) stage.selectedQuestionIds = {};
+            if (!stage.selectedQuestionIds[letter]) stage.selectedQuestionIds[letter] = [];
+
+            const idx = stage.selectedQuestionIds[letter].indexOf(qId);
+            if (idx > -1) stage.selectedQuestionIds[letter].splice(idx, 1);
+            else stage.selectedQuestionIds[letter].push(qId);
+            pushStateToCloud();
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const urlRoom = params.get('room');
+            const urlRole = params.get('role');
+            if (urlRoom && urlRole) {
+                const roomInput = document.getElementById('room-code-input');
+                if (roomInput) roomInput.value = urlRoom;
+                initApp(urlRole);
+            }
+        });
+    </script>
+</body>
+</html>
